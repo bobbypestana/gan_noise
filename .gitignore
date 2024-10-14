@@ -1,0 +1,8 @@
+BAS/
+logs/
+MNIST/
+notebooks/BAS/
+notebooks/logs/
+notebooks/MNIST/
+notebooks/logs/
+notebooks/resources/
