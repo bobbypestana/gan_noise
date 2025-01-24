@@ -47,6 +47,11 @@ parser.add_argument('--penalty_weight', type=float, default=0.5, help='Penalty w
 parser.add_argument('--penalty_weight_entropy', type=float, default=0.5, help='Penalty weight for RL')
 parser.add_argument('--tolerance', type=float, default=0.3, help='Tolerance for Penalty for RL')
 
+parser.add_argument('--l', type=int, default=1, help='Photonic Circuit Layers')
+parser.add_argument('--d', type=int, default=4, help='Photonic Circuit modes')
+parser.add_argument('--noise_from_sim', type=bool, default=False, help='Flag to use noise from simulator')
+
+parser.add_argument('--output_channels', type=int, default=1, help='Number of channels in generated image (e.g., 1 for grayscale, 3 for RGB)')
 args = parser.parse_args()
 
 # Define the custom directory for wandb logs
@@ -90,7 +95,11 @@ if args.log_wandb:
     config.reduction_factor = args.reduction_factor 
     config.penalty_weight = args.penalty_weight 
     config.penalty_weight_entropy = args.penalty_weight_entropy
-    config.tolerance = args.tolerance 
+    config.tolerance = args.tolerance
+    config.l = args.l
+    config.d = args.d
+    config.noise_from_sim = args.noise_from_sim 
+    config.output_channels = args.output_channels
 
 
 # Check for GPU and set device
@@ -197,12 +206,6 @@ def calculate_entropy_penalty(generated_data, img_dim, valid_patterns):
     return entropy_penalty
 
 
-
-
-
-
-
-
 class Generator(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, hidden_layers, reduction_factor=0.8):
         super(Generator, self).__init__()
@@ -227,7 +230,7 @@ class Generator(nn.Module):
     def forward(self, x):
         x = self.relu(self.fc1(x))
         x = self.hidden_layers(x)
-        x = self.sigmoid(self.fc_output(x))
+        x = self.tanh(self.fc_output(x))
         return x
 
 class Discriminator(nn.Module):
@@ -262,46 +265,6 @@ class Discriminator(nn.Module):
 G = Generator(args.latent_size, args.hidden_size, args.image_size, args.hidden_layers_g, args.reduction_factor).to(device)
 D = Discriminator(args.image_size, args.hidden_size, args.hidden_layers_d, args.reduction_factor).to(device)
 
-
-
-
-# class Generator(nn.Module):
-#     def __init__(self, input_size=2, output_size=4, hidden_size=32):
-#         super(Generator, self).__init__()
-#         self.model = nn.Sequential(
-#             nn.Linear(input_size, hidden_size // 2),  # Adjusted hidden layer size
-#             nn.ReLU(),
-#             nn.Linear(hidden_size // 2, hidden_size),  # Adjusted hidden layer size
-#             nn.ReLU(),
-#             nn.Linear(hidden_size, output_size),
-#             nn.Sigmoid(),  # Sigmoid activation to output probabilities
-#         )
-
-#     def forward(self, x):
-#         return torch.round(self.model(x))
-
-
-# class Discriminator(nn.Module):
-#     def __init__(self, input_size=4, hidden_size=16):
-#         super(Discriminator, self).__init__()
-#         self.model = nn.Sequential(
-#             nn.Linear(input_size, hidden_size // 2),  # Adjusted hidden layer size
-#             nn.LeakyReLU(0.2),
-#             nn.Linear(hidden_size // 2, hidden_size),  # Adjusted hidden layer size
-#             nn.LeakyReLU(0.25),
-#             nn.Dropout(0.3),
-#             nn.Linear(hidden_size, 1),
-#             nn.Sigmoid(),  # Sigmoid activation to output probabilities
-#         )
-
-#     def forward(self, x):
-#         x = x.view(-1, 4)  # Flatten input for fully connected layers
-#         return self.model(x)
-    
-
-# # Instantiate models and move to device
-# G = Generator(args.latent_size, args.image_size, args.hidden_size).to(device)
-# D = Discriminator(args.image_size, args.hidden_size).to(device)
 
 # def random_fake_data_for_qgan(batch_size, input_size):
 #     return torch.bernoulli(torch.rand(batch_size, input_size)).to(device)
@@ -371,9 +334,15 @@ for epoch in range(args.num_epochs):
         outputs = D(fake_images)
         g_loss = criterion(outputs, real_labels)
 
-        penalty = calculate_penalty(fake_images, args.img_dim)
-        entropy_penalty = calculate_entropy_penalty(fake_images, args.img_dim, all_valid_patterns)
-        g_loss = g_loss + args.penalty_weight * penalty + args.penalty_weight_entropy * entropy_penalty
+        
+
+        if args.dataset == 'BAS':
+            penalty = calculate_penalty(fake_images, args.img_dim)
+            entropy_penalty = calculate_entropy_penalty(fake_images, args.img_dim, all_valid_patterns)
+        else:
+            penalty = 0
+            entropy_penalty = 0
+        g_loss = g_loss #+ args.penalty_weight * penalty + args.penalty_weight_entropy * entropy_penalty
         
 
         g_optimizer.zero_grad()

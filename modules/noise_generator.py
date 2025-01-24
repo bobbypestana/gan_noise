@@ -2,6 +2,16 @@ import torch
 import numpy as np
 import scipy.stats as stats
 
+import sys
+
+# Absolute path to the directory you want to add
+path = "/home/ffb/projetos_individuais/PhFC_simulator"
+
+# Add the path if it's not already in sys.path
+if path not in sys.path:
+    sys.path.append(path)
+import PhotonicFrequencyCircuitSimulator as pfcs
+
 
 class NoiseGenerator:
     """
@@ -55,11 +65,81 @@ class NoiseGenerator:
         elif self.config.noise_type == 'random_binary':
             z = torch.randint(0, 2, (self.config.batch_size, self.config.latent_size)).float().to(self.device)
 
+        elif self.config.noise_type == 'pfc_sim':
+
+            prob=[]
+            while len(prob)!=self.config.d:
+                testCircuit = pfcs.PhotonicFrequencyCircuitSimulator(l=self.config.l, d=self.config.d)
+
+                randomPhaseParameters = np.random.uniform(-np.pi, +np.pi, self.config.l*self.config.d).reshape(self.config.l, self.config.d)
+
+                testCircuit.set_WSbins(randomPhaseParameters) 
+                testCircuit._propagate()
+
+                freq, signal = testCircuit.get_outputSpectrum()
+                prob = testCircuit.get_peaks_prob()
+
+                N = self.config.d #len(prob) # number of detectors = d (number of modes) ?
+                m = (self.config.batch_size,self.config.latent_size) # (batch_size, input_size) 
+
+            numbers = np.random.choice(a=N, size=m, p=prob)
+
+            # numbers = numbers / np.max(numbers)
+
+            z = torch.tensor(numbers, dtype=torch.float32).to(self.device)
+        
         else:
             # Raise error for unsupported noise types
             raise ValueError(f"Unsupported noise type: {self.config.noise_type}")
 
+        
         return z
+
+
+    # def generate_noise_photonic_sim(self):
+
+    #     testCircuit = pfcs.PhotonicFrequencyCircuitSimulator(l=self.config.l, d=self.config.d)
+
+    #     randomPhaseParameters = np.random.uniform(-np.pi, +np.pi, self.config.l*self.config.d).reshape(self.config.l, self.config.d)
+
+    #     testCircuit.set_WSbins(randomPhaseParameters) 
+    #     testCircuit._propagate()
+
+    #     freq, signal = testCircuit.get_outputSpectrum()
+    #     prob = testCircuit.get_peaks_prob()
+
+    #     N = len(prob) # number of detectors = d (number of modes) ?
+    #     m = (self.config.batch_size,self.config.latent_size) # (batch_size, input_size) 
+
+    #     numbers = np.random.choice(a=N, size=m, p=prob)
+
+    #     numbers = numbers / np.max(numbers)
+
+    #     z = torch.tensor(numbers, dtype=torch.float32).to(self.device)
+    #     return z
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def monobit_frequency_test(self, noise):
         """
