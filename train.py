@@ -251,6 +251,28 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_wandb_dir, all_
             print(f"Stopping training as D(x) ≈ 1.00 and D(G(z)) ≈ 0.00 for {stop_epochs_threshold} consecutive epochs.")
             break
 
+        # Save and visualize generated images
+        if args.run_on_notebook and ((epoch + 1) % 20 == 0):
+            with torch.no_grad():
+                fake_images = fake_images.reshape(fake_images.size(0), 1, args.img_dim, args.img_dim)
+                grid = torchvision.utils.make_grid(fake_images, nrow=10, normalize=True)
+                plt.imshow(grid.permute(1, 2, 0).cpu().numpy())
+                plt.title('Fake Images')
+                plt.show()
+                _, __ = count_unique_patterns(fake_images, args.img_dim)
+                print(f'Fake patterns: {_}')
+
+            with torch.no_grad():
+                # Display real images from the dataset
+                real_images_display = images.reshape(images.size(0), 1, args.img_dim, args.img_dim)
+                real_grid = torchvision.utils.make_grid(real_images_display, nrow=10, normalize=True)
+                plt.subplot(1, 2, 2)
+                plt.imshow(real_grid.permute(1, 2, 0).cpu().numpy())
+                plt.title('Real Images')
+                plt.show()
+                _, __ = count_unique_patterns(real_images_display, args.img_dim)
+                print(f'Real patterns: {_}')
+
     # Save models
     if not args.run_on_notebook:
         timestamp = dt.datetime.now().strftime("%y%m%d%H%M%S")
