@@ -1,0 +1,150 @@
+{
+    "os": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.36",
+    "python": "3.12.4",
+    "heartbeatAt": "2025-01-29T13:14:58.947497",
+    "startedAt": "2025-01-29T13:14:51.080623",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/ffb/projetos_individuais/GAN-S/train.py",
+    "codePathLocal": null,
+    "codePath": "train.py",
+    "git": {
+        "remote": "https://github.com/bobbypestana/gan_noise.git",
+        "commit": "e0bdd093867dc0949fbb6846cd6ac4b90cc017a6"
+    },
+    "email": "ffbellotti@gmail.com",
+    "root": "/home/ffb/projetos_individuais/GAN-S",
+    "host": "lep16v",
+    "username": "ffb",
+    "executable": "/home/ffb/anaconda3/bin/python",
+    "cpu_count": 11,
+    "cpu_count_logical": 22,
+    "cpu_freq": {
+        "current": 3072.001000000002,
+        "min": 0.0,
+        "max": 0.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3072.001,
+            "min": 0.0,
+            "max": 0.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 1006.853931427002,
+            "used": 78.10906219482422
+        }
+    },
+    "memory": {
+        "total": 31.072193145751953
+    }
+}
