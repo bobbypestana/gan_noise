@@ -13,8 +13,6 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 from collections import defaultdict
-import importlib
-import inspect
 
 # Argument parsing
 def parse_args():
@@ -47,7 +45,7 @@ def parse_args():
     parser.add_argument('--tolerance', type=float, default=0.3, help='Tolerance for Penalty for RL')
     parser.add_argument('--photonic_layers', type=int, default=1, help='Photonic Circuit Layers')
     parser.add_argument('--photonic_modes', type=int, default=4, help='Photonic Circuit modes')
-    # parser.add_argument('--noise_from_sim', type=bool, default=False, help='Flag to use noise from simulator')
+    parser.add_argument('--noise_from_sim', type=bool, default=False, help='Flag to use noise from simulator')
     parser.add_argument('--output_channels', type=int, default=1, help='Number of channels in generated image (e.g., 1 for grayscale, 3 for RGB)')
     parser.add_argument('--model_ref', type=str, default='None' )
     return parser.parse_args()
@@ -60,14 +58,14 @@ def init_wandb(args):
         config.update(vars(args))
 
 # Load dataset
-def load_dataset(args, custom_dir):
+def load_dataset(args, custom_wandb_dir):
     if args.dataset == 'MNIST':
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=(0.5,), std=(0.5,))
         ])
         dataset = torchvision.datasets.MNIST(
-            root=f'{custom_dir}/data',
+            root=f'{custom_wandb_dir}/data',
             train=True,
             transform=transform,
             download=True
@@ -80,121 +78,6 @@ def load_dataset(args, custom_dir):
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
     return dataset, number_of_patterns, all_valid_patterns if args.dataset == 'BAS' else None
-
-
-
-
-def load_architecture(model_ref):
-    """
-    Dynamically load the Generator and Discriminator classes from the specified architecture file.
-    """
-    try:
-        # Import the module dynamically
-        module = importlib.import_module(f"architectures.{model_ref}")
-        # Retrieve the Generator and Discriminator classes
-        Generator = getattr(module, "Generator")
-        Discriminator = getattr(module, "Discriminator")
-        return Generator, Discriminator
-    except ModuleNotFoundError:
-        raise ValueError(f"Architecture '{model_ref}' not found in 'architectures' directory.")
-    except AttributeError:
-        raise ValueError(f"Generator or Discriminator class not found in 'architectures/{model_ref}.py'.")
-    
-
-def get_constructor_args(cls):
-    """
-    Extract the constructor arguments and their default values for a given class.
-    Returns a dictionary mapping argument names to their default values (or None if no default is provided).
-    """
-    sig = inspect.signature(cls.__init__)
-    args = {}
-    for name, param in sig.parameters.items():
-        if name == "self":
-            continue  # Skip the 'self' parameter
-        args[name] = param.default if param.default != inspect.Parameter.empty else None
-    return args
-
-
-def compute_derived_args(args, generator_args, discriminator_args):
-    """
-    Compute derived arguments for Generator and Discriminator based on parsed arguments.
-    """
-    derived_generator_args = {}
-    derived_discriminator_args = {}
-
-    # For Generator
-    if 'input_size' in generator_args:
-        derived_generator_args['input_size'] = args.latent_size
-    if 'output_size' in generator_args:
-        derived_generator_args['output_size'] = args.image_size
-    if 'hidden_layers' in generator_args:
-        derived_generator_args['hidden_layers'] = args.hidden_layers_g
-
-    # For Discriminator
-    if 'input_size' in discriminator_args:
-        derived_discriminator_args['input_size'] = args.image_size
-    if 'hidden_layers' in discriminator_args:
-        derived_discriminator_args['hidden_layers'] = args.hidden_layers_d
-
-    return derived_generator_args, derived_discriminator_args
-
-def validate_arguments(cls, args):
-    """
-    Validate that all required arguments for the given class are present in the provided arguments.
-    """
-    required_args = [
-        name for name, param in inspect.signature(cls.__init__).parameters.items()
-        if param.default == inspect.Parameter.empty and name != "self"
-    ]
-    missing_args = [arg for arg in required_args if arg not in args]
-    if missing_args:
-        raise ValueError(f"Missing required arguments for {cls.__name__}: {missing_args}")
-    
-def build_models(args, Generator, Discriminator, device):
-    """
-    Build the Generator and Discriminator models using the provided arguments.
-    Dynamically determines the required arguments for each model and moves them to the specified device.
-    
-    Args:
-        args: Parsed command-line arguments.
-        Generator: The Generator class.
-        Discriminator: The Discriminator class.
-        device: The device (e.g., 'cpu' or 'cuda') to which the models should be moved.
-    
-    Returns:
-        generator: The instantiated Generator model on the specified device.
-        discriminator: The instantiated Discriminator model on the specified device.
-    """
-    # Get the constructor arguments for Generator and Discriminator
-    generator_args = get_constructor_args(Generator)
-    discriminator_args = get_constructor_args(Discriminator)
-
-    # Compute derived arguments
-    derived_generator_args, derived_discriminator_args = compute_derived_args(
-        args, generator_args, discriminator_args
-    )
-
-    # Filter the parsed arguments to match the required arguments for each model
-    filtered_generator_args = {k: v for k, v in vars(args).items() if k in generator_args}
-    filtered_discriminator_args = {k: v for k, v in vars(args).items() if k in discriminator_args}
-
-    # Add derived arguments to the filtered arguments
-    filtered_generator_args.update(derived_generator_args)
-    filtered_discriminator_args.update(derived_discriminator_args)
-
-    # Validate arguments
-    validate_arguments(Generator, filtered_generator_args)
-    validate_arguments(Discriminator, filtered_discriminator_args)
-
-    # Instantiate the models
-    generator = Generator(**filtered_generator_args)
-    discriminator = Discriminator(**filtered_discriminator_args)
-
-    # Move models to the specified device
-    generator.to(device)
-    discriminator.to(device)
-
-    return generator, discriminator
 
 # Count unique patterns
 def count_unique_patterns(generated_data, img_dim):
@@ -226,9 +109,53 @@ def calculate_entropy_penalty(generated_data, img_dim, valid_patterns):
     expected_entropy = -len(valid_patterns) * uniform_prob * np.log2(uniform_prob)
     return abs(entropy_generated - expected_entropy)
 
+# Define Generator and Discriminator
+class Generator(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, hidden_layers, reduction_factor=0.8):
+        super(Generator, self).__init__()
+        layers = []
+        current_size = hidden_size
+        self.fc1 = nn.Linear(input_size, current_size)
+        layers.append(nn.ReLU())
+        for _ in range(hidden_layers):
+            next_size = int(current_size * reduction_factor)
+            layers.append(nn.Linear(current_size, next_size))
+            layers.append(nn.ReLU())
+            current_size = next_size
+        self.hidden_layers = nn.Sequential(*layers)
+        self.fc_output = nn.Linear(current_size, output_size)
+        self.tanh = nn.Tanh()
+
+    def forward(self, x):
+        x = self.tanh(self.fc1(x))
+        x = self.hidden_layers(x)
+        x = self.tanh(self.fc_output(x))
+        return x
+
+class Discriminator(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden_layers, reduction_factor=0.8):
+        super(Discriminator, self).__init__()
+        layers = []
+        current_size = hidden_size
+        self.fc1 = nn.Linear(input_size, current_size)
+        layers.append(nn.ReLU())
+        for _ in range(hidden_layers):
+            next_size = int(current_size * reduction_factor)
+            layers.append(nn.Linear(current_size, next_size))
+            layers.append(nn.ReLU())
+            current_size = next_size
+        self.hidden_layers = nn.Sequential(*layers)
+        self.fc_output = nn.Linear(current_size, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.sigmoid(self.fc1(x))
+        x = self.hidden_layers(x)
+        x = self.sigmoid(self.fc_output(x))
+        return x
 
 # Training loop
-def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_patterns=None):
+def train_gan(args, G, D, data_loader, noise_gen, device, custom_wandb_dir, all_valid_patterns=None):
     criterion = nn.BCELoss()
     d_optimizer = optim.Adam(D.parameters(), lr=args.learning_rate)
     g_optimizer = optim.Adam(G.parameters(), lr=args.learning_rate)
@@ -348,9 +275,14 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
                 print(f'Real patterns: {_}')
 
     # Save models
+
+    prefix = ''
+    if args.run_on_notebook:
+        prefix = '../'
+
     timestamp = dt.datetime.now().strftime("%y%m%d%H%M%S")
-    torch.save(G.state_dict(), f'{custom_dir}/models/generator_{wandb.run.id}_{timestamp}.pth')
-    torch.save(D.state_dict(), f'{custom_dir}/models/discriminator_{wandb.run.id}_{timestamp}.pth')
+    torch.save(G.state_dict(), f'{prefix}{args.dataset}/models/generator_{wandb.run.id}_{timestamp}.pth')
+    torch.save(D.state_dict(), f'{prefix}{args.dataset}/models/discriminator_{wandb.run.id}_{timestamp}.pth')
 
     if args.log_wandb:
         wandb.finish()
@@ -358,36 +290,22 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
 # Main function
 def main():
     args = parse_args()
-
-    if args.run_on_notebook:
-        custom_dir = f'../{args.dataset}'
-    else:
-        custom_dir = f'{args.dataset}'
-
-    
-    os.makedirs(custom_dir, exist_ok=True)
-    os.makedirs(f'{custom_dir}/models', exist_ok=True)
-    os.makedirs(f'{custom_dir}/data', exist_ok=True)
-    os.environ['WANDB_DIR'] = custom_dir
+    custom_wandb_dir = f'{args.dataset}'
+    os.makedirs(custom_wandb_dir, exist_ok=True)
+    os.makedirs(f'{custom_wandb_dir}/models', exist_ok=True)
+    os.makedirs(f'{custom_wandb_dir}/data', exist_ok=True)
+    os.environ['WANDB_DIR'] = custom_wandb_dir
 
     init_wandb(args)
-
-    # Determine the device (CPU or GPU)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-
-    dataset, number_of_patterns, all_valid_patterns = load_dataset(args, custom_dir)
+    dataset, number_of_patterns, all_valid_patterns = load_dataset(args, custom_wandb_dir)
     data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=True)
 
-     # Load the architecture dynamically
-    Generator, Discriminator = load_architecture(args.model_ref)
-
-    # Build the models and move them to the specified device
-    G, D = build_models(args, Generator, Discriminator, device)
-
+    G = Generator(args.latent_size, args.hidden_size, args.image_size, args.hidden_layers_g, args.reduction_factor).to(device)
+    D = Discriminator(args.image_size, args.hidden_size, args.hidden_layers_d, args.reduction_factor).to(device)
     noise_gen = modules.noise_generator.NoiseGenerator(args, device)
 
-    train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_patterns)
+    train_gan(args, G, D, data_loader, noise_gen, device, custom_wandb_dir, all_valid_patterns)
 
 if __name__ == "__main__":
     main()

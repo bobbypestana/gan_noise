@@ -1,98 +1,89 @@
 import torch
 import numpy as np
 import scipy.stats as stats
-
 import sys
 
 # Absolute path to the directory you want to add
 path = "/home/ffb/projetos_individuais/PhFC_simulator"
-
-# Add the path if it's not already in sys.path
 if path not in sys.path:
     sys.path.append(path)
 import PhotonicFrequencyCircuitSimulator as pfcs
-
 
 class NoiseGenerator:
     """
     Class to generate noise vectors based on different probability distributions
     and perform various statistical and randomness tests on the generated noise.
     """
-
     def __init__(self, config, device):
         """
         Initializes the NoiseGenerator with configuration and device.
-
         Parameters:
-            config (object): Configuration containing noise type and parameters.
+            config (dict or object): Configuration containing noise type and parameters.
             device (torch.device): The device (CPU/GPU) to generate the noise on.
         """
         self.config = config
         self.device = device
 
+    def _get_param(self, key):
+        """
+        Helper function to retrieve a parameter from the config.
+        Supports both dictionary and object-based configurations.
+        """
+        if isinstance(self.config, dict):
+            return self.config[key]
+        else:
+            return getattr(self.config, key)
+
     def generate_noise(self):
         """
         Generates noise based on the specified distribution in the config.
-
         Returns:
             torch.Tensor: Generated noise vector.
         """
+        # Extract parameters using the helper function
+        noise_type = self._get_param("noise_type")
+        batch_size = self._get_param("batch_size")
+        latent_size = self._get_param("latent_size")
+
         # Normal (Gaussian) distribution
-        if self.config.noise_type == 'normal':
-            z = torch.randn(self.config.batch_size, self.config.latent_size).to(self.device) * self.config.noise_std + self.config.noise_mean
-
+        if noise_type == 'normal':
+            z = torch.randn(batch_size, latent_size).to(self.device) * self._get_param("noise_std") + self._get_param("noise_mean")
         # Uniform distribution
-        elif self.config.noise_type == 'uniform':
-            z = torch.rand(self.config.batch_size, self.config.latent_size).to(self.device) * (self.config.noise_max - self.config.noise_min) + self.config.noise_min
-
+        elif noise_type == 'uniform':
+            z = torch.rand(batch_size, latent_size).to(self.device) * (self._get_param("noise_max") - self._get_param("noise_min")) + self._get_param("noise_min")
         # Exponential distribution
-        elif self.config.noise_type == 'exponential':
-            z = torch.distributions.Exponential(self.config.noise_lambda).sample((self.config.batch_size, self.config.latent_size)).to(self.device)
-
+        elif noise_type == 'exponential':
+            z = torch.distributions.Exponential(self._get_param("noise_lambda")).sample((batch_size, latent_size)).to(self.device)
         # Log-normal distribution
-        elif self.config.noise_type == 'lognormal':
-            z = torch.distributions.LogNormal(self.config.noise_mean, self.config.noise_std).sample((self.config.batch_size, self.config.latent_size)).to(self.device)
-
+        elif noise_type == 'lognormal':
+            z = torch.distributions.LogNormal(self._get_param("noise_mean"), self._get_param("noise_std")).sample((batch_size, latent_size)).to(self.device)
         # Gamma distribution
-        elif self.config.noise_type == 'gamma':
-            z = torch.distributions.Gamma(self.config.noise_alpha, self.config.noise_beta).sample((self.config.batch_size, self.config.latent_size)).to(self.device)
-
+        elif noise_type == 'gamma':
+            z = torch.distributions.Gamma(self._get_param("noise_alpha"), self._get_param("noise_beta")).sample((batch_size, latent_size)).to(self.device)
         # Poisson distribution
-        elif self.config.noise_type == 'poisson':
-            z = torch.poisson(torch.full((self.config.batch_size, self.config.latent_size), self.config.noise_lambda)).to(self.device)
-
+        elif noise_type == 'poisson':
+            z = torch.poisson(torch.full((batch_size, latent_size), self._get_param("noise_lambda"))).to(self.device)
         # Binary random noise (0s and 1s)
-        elif self.config.noise_type == 'random_binary':
-            z = torch.randint(0, 2, (self.config.batch_size, self.config.latent_size)).float().to(self.device)
-
-        elif self.config.noise_type == 'pfc_sim':
-
-            prob=[]
-            while len(prob)!=self.config.d:
-                testCircuit = pfcs.PhotonicFrequencyCircuitSimulator(l=self.config.l, d=self.config.d)
-
-                randomPhaseParameters = np.random.uniform(-np.pi, +np.pi, self.config.l*self.config.d).reshape(self.config.l, self.config.d)
-
-                testCircuit.set_WSbins(randomPhaseParameters) 
+        elif noise_type == 'random_binary':
+            z = torch.randint(0, 2, (batch_size, latent_size)).float().to(self.device)
+        elif noise_type == 'pfc_sim':
+            prob = []
+            while len(prob) != self._get_param("d"):
+                testCircuit = pfcs.PhotonicFrequencyCircuitSimulator(l=self._get_param("l"), d=self._get_param("d"))
+                randomPhaseParameters = np.random.uniform(-np.pi, +np.pi, self._get_param("l") * self._get_param("d")).reshape(self._get_param("l"), self._get_param("d"))
+                testCircuit.set_WSbins(randomPhaseParameters)
                 testCircuit._propagate()
-
                 freq, signal = testCircuit.get_outputSpectrum()
                 prob = testCircuit.get_peaks_prob()
-
-                N = self.config.d #len(prob) # number of detectors = d (number of modes) ?
-                m = (self.config.batch_size,self.config.latent_size) # (batch_size, input_size) 
-
+                N = self._get_param("d")  # Number of detectors = d (number of modes)?
+                m = (batch_size, latent_size)  # (batch_size, input_size)
             numbers = np.random.choice(a=N, size=m, p=prob)
-
-            # numbers = numbers / np.max(numbers)
-
             z = torch.tensor(numbers, dtype=torch.float32).to(self.device)
-        
+
         else:
             # Raise error for unsupported noise types
-            raise ValueError(f"Unsupported noise type: {self.config.noise_type}")
+            raise ValueError(f"Unsupported noise type: {noise_type}")
 
-        
         return z
 
 

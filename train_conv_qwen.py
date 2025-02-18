@@ -13,9 +13,17 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 from collections import defaultdict
-import importlib
-import inspect
+from functools import reduce
+from torch.nn import functional as F
 
+class Reshape(nn.Module):
+    def __init__(self, *args):
+        super(Reshape, self).__init__()
+        self.shape = args
+
+    def forward(self, x):
+        return x.view(x.size(0), *self.shape)
+    
 # Argument parsing
 def parse_args():
     parser = argparse.ArgumentParser(description="Train GAN with different noise types and parameters.")
@@ -47,7 +55,7 @@ def parse_args():
     parser.add_argument('--tolerance', type=float, default=0.3, help='Tolerance for Penalty for RL')
     parser.add_argument('--photonic_layers', type=int, default=1, help='Photonic Circuit Layers')
     parser.add_argument('--photonic_modes', type=int, default=4, help='Photonic Circuit modes')
-    # parser.add_argument('--noise_from_sim', type=bool, default=False, help='Flag to use noise from simulator')
+    parser.add_argument('--noise_from_sim', type=bool, default=False, help='Flag to use noise from simulator')
     parser.add_argument('--output_channels', type=int, default=1, help='Number of channels in generated image (e.g., 1 for grayscale, 3 for RGB)')
     parser.add_argument('--model_ref', type=str, default='None' )
     return parser.parse_args()
@@ -60,14 +68,14 @@ def init_wandb(args):
         config.update(vars(args))
 
 # Load dataset
-def load_dataset(args, custom_dir):
+def load_dataset(args, custom_wandb_dir):
     if args.dataset == 'MNIST':
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=(0.5,), std=(0.5,))
         ])
         dataset = torchvision.datasets.MNIST(
-            root=f'{custom_dir}/data',
+            root=f'{custom_wandb_dir}/data',
             train=True,
             transform=transform,
             download=True
@@ -80,121 +88,6 @@ def load_dataset(args, custom_dir):
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
     return dataset, number_of_patterns, all_valid_patterns if args.dataset == 'BAS' else None
-
-
-
-
-def load_architecture(model_ref):
-    """
-    Dynamically load the Generator and Discriminator classes from the specified architecture file.
-    """
-    try:
-        # Import the module dynamically
-        module = importlib.import_module(f"architectures.{model_ref}")
-        # Retrieve the Generator and Discriminator classes
-        Generator = getattr(module, "Generator")
-        Discriminator = getattr(module, "Discriminator")
-        return Generator, Discriminator
-    except ModuleNotFoundError:
-        raise ValueError(f"Architecture '{model_ref}' not found in 'architectures' directory.")
-    except AttributeError:
-        raise ValueError(f"Generator or Discriminator class not found in 'architectures/{model_ref}.py'.")
-    
-
-def get_constructor_args(cls):
-    """
-    Extract the constructor arguments and their default values for a given class.
-    Returns a dictionary mapping argument names to their default values (or None if no default is provided).
-    """
-    sig = inspect.signature(cls.__init__)
-    args = {}
-    for name, param in sig.parameters.items():
-        if name == "self":
-            continue  # Skip the 'self' parameter
-        args[name] = param.default if param.default != inspect.Parameter.empty else None
-    return args
-
-
-def compute_derived_args(args, generator_args, discriminator_args):
-    """
-    Compute derived arguments for Generator and Discriminator based on parsed arguments.
-    """
-    derived_generator_args = {}
-    derived_discriminator_args = {}
-
-    # For Generator
-    if 'input_size' in generator_args:
-        derived_generator_args['input_size'] = args.latent_size
-    if 'output_size' in generator_args:
-        derived_generator_args['output_size'] = args.image_size
-    if 'hidden_layers' in generator_args:
-        derived_generator_args['hidden_layers'] = args.hidden_layers_g
-
-    # For Discriminator
-    if 'input_size' in discriminator_args:
-        derived_discriminator_args['input_size'] = args.image_size
-    if 'hidden_layers' in discriminator_args:
-        derived_discriminator_args['hidden_layers'] = args.hidden_layers_d
-
-    return derived_generator_args, derived_discriminator_args
-
-def validate_arguments(cls, args):
-    """
-    Validate that all required arguments for the given class are present in the provided arguments.
-    """
-    required_args = [
-        name for name, param in inspect.signature(cls.__init__).parameters.items()
-        if param.default == inspect.Parameter.empty and name != "self"
-    ]
-    missing_args = [arg for arg in required_args if arg not in args]
-    if missing_args:
-        raise ValueError(f"Missing required arguments for {cls.__name__}: {missing_args}")
-    
-def build_models(args, Generator, Discriminator, device):
-    """
-    Build the Generator and Discriminator models using the provided arguments.
-    Dynamically determines the required arguments for each model and moves them to the specified device.
-    
-    Args:
-        args: Parsed command-line arguments.
-        Generator: The Generator class.
-        Discriminator: The Discriminator class.
-        device: The device (e.g., 'cpu' or 'cuda') to which the models should be moved.
-    
-    Returns:
-        generator: The instantiated Generator model on the specified device.
-        discriminator: The instantiated Discriminator model on the specified device.
-    """
-    # Get the constructor arguments for Generator and Discriminator
-    generator_args = get_constructor_args(Generator)
-    discriminator_args = get_constructor_args(Discriminator)
-
-    # Compute derived arguments
-    derived_generator_args, derived_discriminator_args = compute_derived_args(
-        args, generator_args, discriminator_args
-    )
-
-    # Filter the parsed arguments to match the required arguments for each model
-    filtered_generator_args = {k: v for k, v in vars(args).items() if k in generator_args}
-    filtered_discriminator_args = {k: v for k, v in vars(args).items() if k in discriminator_args}
-
-    # Add derived arguments to the filtered arguments
-    filtered_generator_args.update(derived_generator_args)
-    filtered_discriminator_args.update(derived_discriminator_args)
-
-    # Validate arguments
-    validate_arguments(Generator, filtered_generator_args)
-    validate_arguments(Discriminator, filtered_discriminator_args)
-
-    # Instantiate the models
-    generator = Generator(**filtered_generator_args)
-    discriminator = Discriminator(**filtered_discriminator_args)
-
-    # Move models to the specified device
-    generator.to(device)
-    discriminator.to(device)
-
-    return generator, discriminator
 
 # Count unique patterns
 def count_unique_patterns(generated_data, img_dim):
@@ -226,13 +119,101 @@ def calculate_entropy_penalty(generated_data, img_dim, valid_patterns):
     expected_entropy = -len(valid_patterns) * uniform_prob * np.log2(uniform_prob)
     return abs(entropy_generated - expected_entropy)
 
+# Discriminator Network
+class Discriminator(torch.nn.Module):
+    def __init__(self, image_dims: tuple[int, int] = (28, 28), hidden_dims: int = 128):
+        super(Discriminator, self).__init__()
+        # MNIST digit pictures are 28 x 28.
+        self.image_dims = image_dims
+        self.hidden_dims = hidden_dims
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        # 1 x 28 x 28 => 32 x 14 x 14
+        self.conv1 = torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(5, 5),
+                            stride=(2, 2), padding=(2, 2), bias=False),
+            torch.nn.LeakyReLU(negative_slope=0.01)
+        )
+        # 32 x 14 x 14 => 16 x 7 x 7
+        self.conv2 = torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels=32, out_channels=16, kernel_size=(5, 5),
+                            stride=(2, 2), padding=(2, 2), bias=False),
+            torch.nn.LeakyReLU(negative_slope=0.01)
+        )
+        # 16 x 7 x 7 => 28*28 (product of image_dims)
+        self.fc = torch.nn.Sequential(
+            torch.nn.Flatten(),
+            torch.nn.Linear(in_features=reduce(lambda x, y: x * y, self.image_dims),
+                            out_features=reduce(lambda x, y: x * y, self.image_dims)),
+            torch.nn.LeakyReLU(negative_slope=0.01),
+            torch.nn.Linear(in_features=reduce(lambda x, y: x * y, self.image_dims),
+                            out_features=1)
+        )
+        self.to(self.device)
+
+    def forward(self, images: torch.Tensor):
+        images = images.to(self.device)
+        """Assuming batched data"""
+        assert len(
+            images.shape) == 4, f'Images should be given as shape: (batch_size, nr_channels, height, width), but is {images.shape}'
+        assert images.shape[
+               2:] == self.image_dims, f'Dimension of each image in batch should be: {self.image_dims}, but is {images.shape[2:]}'
+        prediction = self.conv1(images)
+        prediction = self.conv2(prediction)
+        prediction = self.fc(prediction)
+        return prediction
+
+class Generator(torch.nn.Module):
+    """ check https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout
+     --> use normalization directly after layer (before activation function) and dropout after activation."""
+    def __init__(self, latent_dims: int = 100, hidden_dims: int = 128, image_dims: tuple[int, int] = (28, 28)):
+        super(Generator, self).__init__()
+        # Random value vector size
+        self.latent_dims = latent_dims
+        self.hidden_dims = hidden_dims
+        self.image_dims = image_dims
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        # latent_dims => 28*28 (product of image_dims)
+        self.fc = torch.nn.Sequential(
+            torch.nn.Linear(in_features=self.latent_dims, out_features=reduce(lambda x, y: x * y, self.image_dims)),
+            torch.nn.BatchNorm1d(num_features=reduce(lambda x, y: x * y, self.image_dims)),
+            torch.nn.LeakyReLU(0.01),
+        )
+        # 28*28 (product of image_dims) => 16 x 7 x 7
+        self.reshape = Reshape(16, 7, 7)
+        # 16 X 7 X 7 => 32 x 14 x 14
+        self.conv1 = torch.nn.Sequential(
+            torch.nn.ConvTranspose2d(in_channels=16, out_channels=32, padding=(2, 2),
+                                     kernel_size=(5, 5), stride=(2, 2),
+                                     output_padding=(1, 1), bias=False),
+            torch.nn.BatchNorm2d(num_features=32),
+            torch.nn.LeakyReLU(negative_slope=0.01)
+        )
+        # 32 x 14 x 14 => 1 x 28 x 28 (image_dims)
+        self.conv2 = torch.nn.Sequential(
+            torch.nn.ConvTranspose2d(in_channels=32, out_channels=1, padding=(2, 2),
+                                     kernel_size=(5, 5), stride=(2, 2),
+                                     output_padding=(1, 1), bias=False),
+            torch.nn.Sigmoid()
+        )
+        self.to(self.device)
+
+    def forward(self, latent_vectors: torch.Tensor):
+        latent_vectors = latent_vectors.to(self.device)
+        assert len(latent_vectors.shape) == 2, "Batch of latens vector should have shape: (batch size, latent_dims)"
+        assert latent_vectors.shape[
+                   1] == self.latent_dims, f'Each latent vector in batch should be of size: {self.latent_dims}'
+        # Forward pass
+        generated_images = self.fc(latent_vectors)
+        generated_images = self.reshape(generated_images)
+        generated_images = self.conv1(generated_images)
+        generated_images = self.conv2(generated_images)
+        return generated_images
 
 # Training loop
-def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_patterns=None):
+def train_gan(args, G, D, data_loader, noise_gen, device, custom_wandb_dir, all_valid_patterns=None):
     criterion = nn.BCELoss()
     d_optimizer = optim.Adam(D.parameters(), lr=args.learning_rate)
     g_optimizer = optim.Adam(G.parameters(), lr=args.learning_rate)
-
     stop_epochs_threshold = 10
     no_change_threshold = 0.01
     no_change_epochs_threshold = 10
@@ -240,11 +221,12 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
     no_change_epochs = 0
     previous_d_x_value = None
     previous_d_gz_value = None
-
     for epoch in range(args.num_epochs):
         start_time = time.time()
         for i, (images, _) in enumerate(data_loader):
-            images = images.reshape(args.batch_size, -1).to(device)
+            # Reshape images to [batch_size, 1, img_dim, img_dim]
+            images = images.view(args.batch_size, 1, args.img_dim, args.img_dim).to(device)
+            
             real_labels = torch.ones(args.batch_size, 1).to(device)
             fake_labels = torch.zeros(args.batch_size, 1).to(device)
 
@@ -276,12 +258,11 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
             else:
                 penalty = 0
                 entropy_penalty = 0
-            g_loss = g_loss + args.penalty_weight * penalty + args.penalty_weight_entropy * entropy_penalty
 
+            g_loss = g_loss + args.penalty_weight * penalty + args.penalty_weight_entropy * entropy_penalty
             g_optimizer.zero_grad()
             g_loss.backward()
             g_optimizer.step()
-
             # Log progress
             if (i + 1) % (len(data_loader) // 4) == 0:
                 elapsed_time = time.time() - start_time
@@ -291,7 +272,6 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
                       f'D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}, '
                       f'D(x): {d_x_value:.2f}, D(G(z)): {d_gz_value:.2f}, '
                       f'Time Elapsed: {elapsed_time:.2f} sec')
-
                 if args.log_wandb:
                     wandb.log({
                         'Epoch': epoch,
@@ -301,56 +281,54 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
                         'D(G(z))': d_gz_value,
                         'Time Elapsed': elapsed_time,
                     })
-
-        # Check stopping criteria
-        if d_x_value >= 0.98 and d_gz_value <= 0.02:
-            consecutive_epochs += 1
-        else:
-            consecutive_epochs = 0
-
-        if previous_d_x_value is not None and previous_d_gz_value is not None:
-            d_x_change = abs(d_x_value - previous_d_x_value) / max(abs(previous_d_x_value), 1e-8)
-            d_gz_change = abs(d_gz_value - previous_d_gz_value) / max(abs(previous_d_gz_value), 1e-8)
-            if d_x_change <= no_change_threshold and d_gz_change <= no_change_threshold:
-                no_change_epochs += 1
-            else:
-                no_change_epochs = 0
-            previous_d_x_value = d_x_value
-            previous_d_gz_value = d_gz_value
-        else:
-            previous_d_x_value = d_x_value
-            previous_d_gz_value = d_gz_value
-
-        if consecutive_epochs >= stop_epochs_threshold:
-            print(f"Stopping training as D(x) ≈ 1.00 and D(G(z)) ≈ 0.00 for {stop_epochs_threshold} consecutive epochs.")
-            break
-
-        # Save and visualize generated images
-        if args.run_on_notebook and ((epoch + 1) % 20 == 0):
-            with torch.no_grad():
-                fake_images = fake_images.reshape(fake_images.size(0), 1, args.img_dim, args.img_dim)
-                grid = torchvision.utils.make_grid(fake_images, nrow=10, normalize=True)
-                plt.imshow(grid.permute(1, 2, 0).cpu().numpy())
-                plt.title('Fake Images')
-                plt.show()
-                _, __ = count_unique_patterns(fake_images, args.img_dim)
-                print(f'Fake patterns: {_}')
-
-            with torch.no_grad():
-                # Display real images from the dataset
-                real_images_display = images.reshape(images.size(0), 1, args.img_dim, args.img_dim)
-                real_grid = torchvision.utils.make_grid(real_images_display, nrow=10, normalize=True)
-                plt.subplot(1, 2, 2)
-                plt.imshow(real_grid.permute(1, 2, 0).cpu().numpy())
-                plt.title('Real Images')
-                plt.show()
-                _, __ = count_unique_patterns(real_images_display, args.img_dim)
-                print(f'Real patterns: {_}')
-
+                # Check stopping criteria
+                if d_x_value >= 0.98 and d_gz_value <= 0.02:
+                    consecutive_epochs += 1
+                else:
+                    consecutive_epochs = 0
+                if previous_d_x_value is not None and previous_d_gz_value is not None:
+                    d_x_change = abs(d_x_value - previous_d_x_value) / max(abs(previous_d_x_value), 1e-8)
+                    d_gz_change = abs(d_gz_value - previous_d_gz_value) / max(abs(previous_d_gz_value), 1e-8)
+                    if d_x_change <= no_change_threshold and d_gz_change <= no_change_threshold:
+                        no_change_epochs += 1
+                    else:
+                        no_change_epochs = 0
+                    previous_d_x_value = d_x_value
+                    previous_d_gz_value = d_gz_value
+                else:
+                    previous_d_x_value = d_x_value
+                    previous_d_gz_value = d_gz_value
+                if consecutive_epochs >= stop_epochs_threshold:
+                    print(f"Stopping training as D(x) ≈ 1.00 and D(G(z)) ≈ 0.00 for {stop_epochs_threshold} consecutive epochs.")
+                    break
+                # Save and visualize generated images
+                if args.run_on_notebook and ((epoch + 1) % 20 == 0):
+                    with torch.no_grad():
+                        fake_images = fake_images.view(fake_images.size(0), 1, args.img_dim, args.img_dim)
+                        grid = torchvision.utils.make_grid(fake_images, nrow=10, normalize=True)
+                        plt.imshow(grid.permute(1, 2, 0).cpu().numpy())
+                        plt.title('Fake Images')
+                        plt.show()
+                        _, __ = count_unique_patterns(fake_images, args.img_dim)
+                        print(f'Fake patterns: {_}')
+                    with torch.no_grad():
+                        # Display real images from the dataset
+                        real_images_display = images.view(images.size(0), 1, args.img_dim, args.img_dim)
+                        real_grid = torchvision.utils.make_grid(real_images_display, nrow=10, normalize=True)
+                        plt.subplot(1, 2, 2)
+                        plt.imshow(real_grid.permute(1, 2, 0).cpu().numpy())
+                        plt.title('Real Images')
+                        plt.show()
+                        _, __ = count_unique_patterns(real_images_display, args.img_dim)
+                        print(f'Real patterns: {_}')
     # Save models
+    prefix = ''
+    if args.run_on_notebook:
+        prefix = '../'
+
     timestamp = dt.datetime.now().strftime("%y%m%d%H%M%S")
-    torch.save(G.state_dict(), f'{custom_dir}/models/generator_{wandb.run.id}_{timestamp}.pth')
-    torch.save(D.state_dict(), f'{custom_dir}/models/discriminator_{wandb.run.id}_{timestamp}.pth')
+    torch.save(G.state_dict(), f'{prefix}{args.dataset}/models/generator_{wandb.run.id}_{timestamp}.pth')
+    torch.save(D.state_dict(), f'{prefix}{args.dataset}/models/discriminator_{wandb.run.id}_{timestamp}.pth')
 
     if args.log_wandb:
         wandb.finish()
@@ -358,36 +336,19 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
 # Main function
 def main():
     args = parse_args()
-
-    if args.run_on_notebook:
-        custom_dir = f'../{args.dataset}'
-    else:
-        custom_dir = f'{args.dataset}'
-
-    
-    os.makedirs(custom_dir, exist_ok=True)
-    os.makedirs(f'{custom_dir}/models', exist_ok=True)
-    os.makedirs(f'{custom_dir}/data', exist_ok=True)
-    os.environ['WANDB_DIR'] = custom_dir
-
+    custom_wandb_dir = f'{args.dataset}'
+    os.makedirs(custom_wandb_dir, exist_ok=True)
+    os.makedirs(f'{custom_wandb_dir}/models', exist_ok=True)
+    os.makedirs(f'{custom_wandb_dir}/data', exist_ok=True)
+    os.environ['WANDB_DIR'] = custom_wandb_dir
     init_wandb(args)
-
-    # Determine the device (CPU or GPU)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-
-    dataset, number_of_patterns, all_valid_patterns = load_dataset(args, custom_dir)
+    dataset, number_of_patterns, all_valid_patterns = load_dataset(args, custom_wandb_dir)
     data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=True)
-
-     # Load the architecture dynamically
-    Generator, Discriminator = load_architecture(args.model_ref)
-
-    # Build the models and move them to the specified device
-    G, D = build_models(args, Generator, Discriminator, device)
-
+    G = Generator(args.latent_size, args.hidden_size, (args.img_dim, args.img_dim)).to(device)
+    D = Discriminator(image_dims=(args.img_dim, args.img_dim)).to(device)
     noise_gen = modules.noise_generator.NoiseGenerator(args, device)
-
-    train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_patterns)
+    train_gan(args, G, D, data_loader, noise_gen, device, custom_wandb_dir, all_valid_patterns)
 
 if __name__ == "__main__":
     main()
