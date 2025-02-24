@@ -68,14 +68,14 @@ class NoiseGenerator:
             z = torch.randint(0, 2, (batch_size, latent_size)).float().to(self.device)
         elif noise_type == 'pfc_sim':
             prob = []
-            while len(prob) != self._get_param("d"):
-                testCircuit = pfcs.PhotonicFrequencyCircuitSimulator(l=self._get_param("l"), d=self._get_param("d"))
-                randomPhaseParameters = np.random.uniform(-np.pi, +np.pi, self._get_param("l") * self._get_param("d")).reshape(self._get_param("l"), self._get_param("d"))
+            while len(prob) != self._get_param("photonic_modes"):
+                testCircuit = pfcs.PhotonicFrequencyCircuitSimulator(l=self._get_param("photonic_layers"), d=self._get_param("photonic_modes"))
+                randomPhaseParameters = np.random.uniform(-np.pi, +np.pi, self._get_param("photonic_layers") * self._get_param("photonic_modes")).reshape(self._get_param("photonic_layers"), self._get_param("photonic_modes"))
                 testCircuit.set_WSbins(randomPhaseParameters)
                 testCircuit._propagate()
                 freq, signal = testCircuit.get_outputSpectrum()
                 prob = testCircuit.get_peaks_prob()
-                N = self._get_param("d")  # Number of detectors = d (number of modes)?
+                N = self._get_param("photonic_modes")  # Number of detectors = d (number of modes)?
                 m = (batch_size, latent_size)  # (batch_size, input_size)
             numbers = np.random.choice(a=N, size=m, p=prob)
             z = torch.tensor(numbers, dtype=torch.float32).to(self.device)

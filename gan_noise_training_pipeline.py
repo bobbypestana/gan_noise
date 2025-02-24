@@ -15,24 +15,24 @@ noise_params = {
     'gamma': {'noise_alpha': [1.0, 2.0, 3.0], 'noise_beta': [1.0, 2.0]},
     'poisson': {'noise_lambda': [1.0, 2.0, 5.0]},
     'random_binary': {},  # No parameters to vary for random_binary
-    'pfc_sim': {'d': [2,4,6,8], 'l': [1,2,5,10,15,20]}
+    'pfc_sim': {'photonic_modes': [2,4,6,8], 'photonic_layers': [1,2,5,10,15,20]}
 }
 
 
 # Set default configurations based on dataset
 dataset_configs = {
     'MNIST': {
-        'project_wandb': 'MNIST-noise-investigation-convolution-1',
+        'project_wandb': 'gan-architecture_comparison',
         'latent_size': 64,
         'hidden_size': 256,
         'image_size': 784,  # Flattened 28x28 image
-        'batch_size': 50,
+        'batch_size': 200,
         'learning_rate': 0.0002,
-        'num_epochs': 200,
+        'num_epochs': 500,
         'hidden_layers_d': 1,
         'hidden_layers_g': 2,
-        'use_convolutions': True,
-        'log_wandb': True
+        'log_wandb': True,
+        'model_ref': 'conv_gpt'
     },
     'BAS': {
         'project_wandb': 'BAS-noise-investigation-dim-02-pfcs',
