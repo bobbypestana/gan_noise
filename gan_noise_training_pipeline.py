@@ -15,7 +15,7 @@ noise_params = {
     'gamma': {'noise_alpha': [1.0, 2.0, 3.0], 'noise_beta': [1.0, 2.0]},
     'poisson': {'noise_lambda': [1.0, 2.0, 5.0]},
     'random_binary': {},  # No parameters to vary for random_binary
-    'pfc_sim': {'photonic_modes': [2,4,6,8], 'photonic_layers': [1,2,5,10,15,20]}
+    'pfc_sim': {'photonic_modes': [2,4,6,8], 'photonic_layers': [1,2,5,10]}
 }
 
 
@@ -35,21 +35,21 @@ dataset_configs = {
         'model_ref': 'conv_gpt'
     },
     'BAS': {
-        'project_wandb': 'BAS-noise-investigation-dim-02-pfcs',
+        'project_wandb': 'gan-architecture_comparison-BAS',
         'img_dim': 2,  # Set the Bars-and-Stripes image dimension (e.g., 4x4)
         'latent_size': 2,
         'hidden_size': 32,
-        'batch_size': 20,
+        'batch_size': 100,
         'learning_rate': 0.0002,
-        'num_epochs': 200,
-        'n_samples': 1_000,
+        'num_epochs': 300,
+        'n_samples': 25_000,
         'hidden_layers_d': 3,
         'hidden_layers_g': 3,
-        'reduction_factor': 0.5 ,
         'log_wandb': True ,
         'penalty_weight': 0,
-        'penalty_weight_entropy': 0.5,
-        'tolerance': 0.3
+        'penalty_weight_entropy': 0,
+        'tolerance': 0.3, 
+        'model_ref': 'conv_gpt'
     }
 }
 
@@ -58,7 +58,7 @@ dataset_configs['BAS']['image_size'] = dataset_configs['BAS']['img_dim'] ** 2  #
 
 
 # Select dataset and get configurations
-dataset = 'MNIST'  # Change this to 'BAS' for Bars-and-Stripes
+dataset = 'BAS'  # Change this to 'BAS' for Bars-and-Stripes
 config = dataset_configs[dataset]
 
 # Generate commands for each noise type with all combinations of parameter values

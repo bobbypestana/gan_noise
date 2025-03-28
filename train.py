@@ -271,8 +271,10 @@ def train_gan(args, G, D, data_loader, noise_gen, device, custom_dir, all_valid_
             g_loss = criterion(outputs, real_labels)
 
             if args.dataset == 'BAS':
-                penalty = calculate_penalty(fake_images, args.img_dim, args.tolerance, number_of_patterns)
-                entropy_penalty = calculate_entropy_penalty(fake_images, args.img_dim, all_valid_patterns)
+                # penalty = calculate_penalty(fake_images, args.img_dim, args.tolerance, number_of_patterns)
+                # entropy_penalty = calculate_entropy_penalty(fake_images, args.img_dim, all_valid_patterns)
+                penalty = 0
+                entropy_penalty = 0
             else:
                 penalty = 0
                 entropy_penalty = 0
